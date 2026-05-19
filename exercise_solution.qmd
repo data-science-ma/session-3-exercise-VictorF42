@@ -1,0 +1,265 @@
+---
+title: "Exercise: Modelling Binary Outcomes"
+subtitle: "Session 3 · Quantitative Data Analysis"
+author: "Victor Fischer"
+date: "2026-05-19"
+format:
+  html:
+    toc: true
+    number-sections: true
+    code-tools: true
+    self-contained: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+::: {.callout-note}
+**Session business question:** *Can we predict which firms are likely to exit the market in the next year?*
+
+Work through the tasks below. For each task, write your R code in the code chunk provided and your interpretation in the text below it. Aim to write complete sentences — imagine you are explaining your findings to a manager who has not studied statistics.
+
+You have approximately **40 minutes**.
+:::
+
+---
+
+# Setup
+
+Run the setup chunk to load packages and data.
+
+```{r}
+library(tidyverse)
+library(modelsummary)
+library(marginaleffects)
+library(broom)
+
+firms <- read_csv("data/bisnode-firms.csv")
+```
+
+Take two minutes to familiarise yourself with the data:
+
+```{r}
+# Explore the data
+glimpse(firms)
+summary(firms)
+```
+
+**Question:** What does one row in this dataset represent? What does `exit = 1` mean?
+
+One row stands for one firm from the sample with metrics like its profit margin or age. If the entry 'exit' is equal to one, the firm has exited the market.
+
+---
+
+# Task 1: Fit a Logistic Regression Model
+
+Fit a logistic regression model that predicts firm exit using the following predictors:
+
+- `sales_log` (log of sales revenue)
+- `profit_margin` (profit as a share of sales)
+- `employees_log` (log of number of employees)
+- `age` (firm age in years)
+
+Call your model `model_base`.
+
+::: {.callout-tip}
+Use `glm()` with `family = binomial`. The syntax is otherwise the same as `lm()`.
+:::
+
+```{r}
+# Fit the logistic regression model
+
+model_base <- glm(
+  formula = exit ~ sales_log + profit_margin + employees_log + age, 
+  data = firms,
+  family = binomial
+  )
+
+```
+
+Inspect the output:
+
+```{r}
+summary(model_base)
+```
+
+**Question 1a:** Which predictors are statistically significant at the 5% level?
+
+At the 5% level sales_log, profit_margin and age are significant (all p<0.001), which means that the factors all have an effect on the probability of an exit. The number of employees (employees_log) on the other hand is not significant. With p=0.4539 it can not be ruled out that its effect is zero.
+
+**Question 1b:** Based on the signs of the coefficients, which factors seem to *increase* the probability of exit, and which seem to *decrease* it? Does this make economic sense?
+
+All significant factors seem to decrease the probability of an exit. For sales_log and profit_margin this makes sense from a theoretical point of view, since both higher sales and profit indicate a better economic performance of the firm. The negative effect of age for the probability of exit also makes sense, because younger firms that are less established on the market face higher risks and might not have a profitable business model yet.
+
+The positive coefficient for employees_log would imply, that larger firms are more likely to exit the market. However, given the low significance this result should not be interpreted.
+---
+
+# Task 2: Extend Your Model
+
+Now add at least **two more predictors** from the dataset to your model. Use your subject-matter intuition: which firm characteristics might predict exit?
+
+Call your extended model `model_ext`.
+
+```{r}
+# Look at available variables
+names(firms)
+
+hist(log(firms$liquidity))
+
+sum(firms$liquidity <= 0, na.rm = TRUE)
+
+firms <- firms |> 
+  mutate(liquidity_log = ifelse(liquidity > 0, log(liquidity), NA))
+```
+
+```{r}
+# Fit the extended model
+model_ext <- glm(
+  formula = exit ~ sales_log + profit_margin + employees_log + age + liquidity_log + urban + foreign, 
+  data = firms,
+  family = binomial
+  )
+```
+
+Compare your two models side-by-side using `modelsummary()`:
+
+```{r}
+modelsummary(
+  list("Base Model" = model_base, "Extended Model" = model_ext),
+  stars = TRUE,
+  gof_map = c("nobs", "aic")
+)
+```
+
+**Question 2a:** Did adding the new predictors improve the model fit (use AIC to compare: lower is better)?
+
+
+The AIC decreased significantly, even though AIC penalizes additional parameters. This means that including the additional factors improved the model fit.
+
+Note: Liquidity was log-transformed before including it into the model to better represent the non-linearity of the values. The 84 values with negative or zero liquidity were excluded.
+
+**Question 2b:** Did any coefficients change notably when you added the new variables? What might that indicate?
+The coefficients for sales_log and profit_margin both decreased notably, presumably mostly by adding liquidity_log (since urban and foreign are not significant). This is likely because all three variables are correlated since firms with higher profti margins and higher sales tend to be more liquid.
+
+---
+
+# Task 3: Interpret Coefficients as Odds Ratios
+
+For your **extended model**, compute and display the odds ratios (with 95% confidence intervals):
+
+```{r}
+# Odds ratios
+exp(coef(model_ext))
+
+# With confidence intervals
+exp(confint(model_ext))
+```
+
+**Question 3:** Choose **one** predictor from your model and write a complete, businesslike interpretation of its odds ratio. Use the following template:
+
+> "A one-unit increase in [variable] is associated with a multiplication of the odds of firm exit by [odds ratio]. This means the odds of exit [increase/decrease] by [X]%. This effect is [statistically significant / not statistically significant] at the 5% level."
+
+*Your answer:*
+
+A one-unit increase in profit_margin is associated with a multiplication of the odds of firm exit by `r round(exp(coef(model_ext)["profit_margin"]), 3)`. This means the odds of exit decrease by 
+`r round((1 - exp(coef(model_ext)["profit_margin"])) * 100, 1)`%. This effect is statistically significant at the 5% level.
+
+---
+
+# Task 4: Predicted Probabilities for Two Firm Profiles
+
+Define two contrasting firm profiles and compute the predicted probability of exit for each. Choose profiles that tell an interesting story.
+
+Fill in the scenario values below:
+
+```{r}
+scenarios <- tibble(
+   label         = c("Profile A: Young struggling firm", "Profile B: Old established firm"),
+   sales_log     = c(9.8, 12.0),       
+   employees_log = c(-1.473, -1.473 ),
+   profit_margin = c(-0.25, 0.032),
+   age           = c(3, 15),
+   liquidity_log = c(log(0.28), log(2.38)),
+   foreign       = c(1, 1),
+   urban         = c(1, 1)
+ )
+
+scenarios <- scenarios |>
+  mutate(pred_prob = predict(model_ext, newdata = scenarios, type = "response"))
+
+
+scenarios |> select(label, pred_prob)
+```
+
+**Question 4:** Describe your two profiles in plain language. Why did you choose these particular values? What story do the predicted probabilities tell?
+
+*Your answer:*
+
+For the significant factors I chose the values of the 1st quartile for Profile A and the 3rd quartile for Profile B. Profile A represents a young company (`r scenarios$age[1]` years), with low sales, a negative profit margin of 
+`r round(scenarios$profit_margin[1], 2)` and low liquidity. Profile B is much older (`r scenarios$age[2]` years) and also does better on the other metrics. 
+
+In order to not get the results interfered by non-significant 
+factors, for employees, foreign and urban both scenarios got assigned the 
+same value. 
+
+The resulting predicted probabilities of exit are `r round(scenarios$pred_prob[1] * 100, 1)`% for Profile A and `r round(scenarios$pred_prob[2] * 100, 1)`% for Profile B.
+
+This means that the younger, financially weaker firm faces over four times the exit risk of the more established firm. This is consistent with the theoretical expectation that financial health and firm age are important determinants of survival.
+
+---
+
+# Task 5: Write a Finding Using Inline R Code
+
+Write a short paragraph (3–5 sentences) summarising one key finding from your analysis. Your paragraph must include at least **two numbers embedded as inline R code** (not typed manually).
+
+
+
+---
+
+**Your paragraph:**
+
+According to the logistic regression model, the profit margin is a highly relevant factor in predicting a firms exit of the market. In a model testing the effects of sales, profit margin, the number of employees and firm age the profit margin was the factor with the highest coefficient; each increase of the profit margin by one unit reduces the odds of exit by `r round((1 - exp(coef(model_base)["profit_margin"])) * 100, 1)` %. After additionally taking firm liquidity into account the odds are still reduced by `r round((1 - exp(coef(model_ext)["profit_margin"])) * 100, 1)` % for every unit increase in profit margin. 
+
+---
+
+# Bonus: Average Marginal Effects
+
+::: {.callout-note}
+**Optional** — attempt this if you finish the main tasks early.
+:::
+
+Compute the average marginal effects (AMEs) for your extended model:
+
+```{r}
+# avg_slopes(...)
+```
+
+**Bonus question:** Compare the AME for `profit_margin` to the LPM coefficient for `profit_margin` (you may need to fit a quick LPM). Are they similar? What does this tell you about when the LPM might be acceptable?
+
+```{r}
+# Fit LPM for comparison
+# lpm <- lm(exit ~ sales_log + profit_margin + employees_log + age,
+#           data = firms)
+
+# Compare coefficients
+
+```
+
+*Your answer:*
+
+---
+
+# Wrap-up Reflection
+
+Before we debrief, take 2 minutes to note:
+
+1. What was the most conceptually challenging part of this exercise?
+
+What was hard to conceptualize was the interpretation of the logistic regression with the sigmoid function compared to a linear regression model. 
+
+2. If you had to explain logistic regression to a colleague with no statistics background, what analogy or example would you use?
+
+If you group firms according to their profit margin or other factors and look at the share of exit in each group, it will differ between the groups with low profit firms having higher exit shares and high profit firms having low exit shares. This pattern for any factor follows an S-shape that can the approximated by an S-shape curve (the sigmoid function). This is called logistic regression and it results in predicted probabilities of an exit (or any other binary outcome variable) for every profit margin value (or other factors). 
+
+
