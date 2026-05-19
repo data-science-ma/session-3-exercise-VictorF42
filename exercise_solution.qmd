@@ -262,4 +262,6 @@ What was hard to conceptualize was the interpretation of the logistic regression
 
 If you group firms according to their profit margin or other factors and look at the share of exit in each group, it will differ between the groups with low profit firms having higher exit shares and high profit firms having low exit shares. This pattern for any factor follows an S-shape that can the approximated by an S-shape curve (the sigmoid function). This is called logistic regression and it results in predicted probabilities of an exit (or any other binary outcome variable) for every profit margin value (or other factors). 
 
+# Aknowledgement of AI use
+For this exercise the the large language model Claude (Sonnet 4.6) was used to help with coding and to discuss and understand the theory. All outputs were critically reviewed and all answers were written independently.  
 
